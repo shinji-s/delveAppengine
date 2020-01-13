@@ -14,8 +14,8 @@ type Process interface {
 	Executable() string
 
 	// StartTime returns process Start time
-	StartTime() uint64
+	StartTime() (uint64, error)
 
 	// Zombie returns if the process is a zombie process
-	Zombie() bool
+	Zombie() (bool, error)
 }

@@ -5,15 +5,19 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"sort"
 	"sync"
 	"time"
 
-	"github.com/derekparker/delve/service"
-	"github.com/derekparker/delve/service/rpccommon"
+	"github.com/go-delve/delve/pkg/logflags"
+	"github.com/go-delve/delve/service"
+	"github.com/go-delve/delve/service/rpccommon"
+//	"github.com/derekparker/delve/service"
+//	"github.com/derekparker/delve/service/rpccommon"
 )
 
-//DebuggedPID PID of process currently attached tot he debugger
+//DebuggedPID PID of process currently attached to the debugger
 var DebuggedPID = 0
 
 //PidChan Used to PID the PID to whcih we need to attach the debugger
@@ -51,7 +55,7 @@ func main() {
 	}
 }
 
-//checkAppengineModuleProcess llok after the Appengine module process and push the latest new PID into channel
+//checkAppengineModuleProcess look after the Appengine module process and push the latest new PID into channel
 func checkAppengineModuleProcess() {
 	processes, err := processes()
 	if err != nil {
@@ -64,7 +68,7 @@ func checkAppengineModuleProcess() {
 		var wg sync.WaitGroup
 		defer close(pchan)
 		for _, p := range processes {
-			if p.Executable() == "_go_app" {
+			if p.Executable() == "_ah_exe" {
 				wg.Add(1)
 				go func(pid int) {
 					defer wg.Done()
@@ -113,6 +117,14 @@ func attachDelveServer(attachPid int) chan bool {
 	wgServerRunning.Add(1)
 	go func() {
 		defer close(stopChan)
+		Log := true
+		LogOutput := ""
+		LogDest := "delveAppEngine.log"
+		if err := logflags.Setup(Log, LogOutput, LogDest); err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			return
+		}
+		defer logflags.Close()
 
 		// Make a TCP listener
 		listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
@@ -124,15 +136,21 @@ func attachDelveServer(attachPid int) chan bool {
 
 		// Create and start a debugger server
 		server := rpccommon.NewServer(&service.Config{
-			Listener:    listener,
-			ProcessArgs: []string{},
-			AttachPid:   attachPid,
-			AcceptMulti: true,
-		}, true)
+			Listener:       listener,
+			ProcessArgs:    []string{},
+			AttachPid:      attachPid,
+			AcceptMulti:    true,
+			APIVersion:     1,
+			// WorkingDir:     WorkingDir,
+			Backend:        "native",
+			CheckGoVersion: true,
+//		}, true)
+		})
 		if err := server.Run(); err != nil {
 			log.Println(err.Error())
 		} else {
-			defer server.Stop(false)
+//			defer server.Stop(false)
+			defer server.Stop()
 		}
 		wgServerRunning.Done()
 		<-stopChan
@@ -151,8 +169,9 @@ func getRecentProcess(pids sort.IntSlice) int {
 	tmax := uint64(0)
 	pid := 0
 	for _, p := range pids {
-		t, zombie := getProcessStartTime(p)
-		if zombie {
+		var err error;
+		t, zombie, err := getProcessStartTime(p)
+		if zombie || err != nil {
 			continue
 		}
 		if t > tmax {
